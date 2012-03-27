@@ -1,0 +1,8 @@
+/build/
+/dist/
+/bin/
+/templates/
+/output/
+/include/
+/lib/
+*.egg-info/
