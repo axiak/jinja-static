@@ -1,8 +1,12 @@
 import os
 import glob
 import time
+import pipes
+import shutil
 import random
+import tempfile
 import hashlib
+import logging
 import collections
 try:
     from collections import OrderedDict
@@ -12,10 +16,23 @@ except ImportError:
 import envoy
 import jinjatagext
 
+logger = logging.getLogger('jinjastatic')
+
 extensions = {
     'text/css': 'css',
     'text/javascript': 'js',
-}
+    }
+
+pre_compilers = {
+    'text/less': ('lessc %(input)s', 'text/css'),
+    'text/coffeescript': ('coffee --join %(output)s -c %(input)s', 'text/javascript'),
+    }
+
+compilers = {
+    'text/javascript': 'uglifyjs %s',
+    'text/css': 'uglifycss %s',
+    }
+
 
 g = {
     'debug': False,
@@ -23,35 +40,37 @@ g = {
     ('text/javascript', False): {},
     ('text/css', True): {},
     ('text/javascript', True): {},
+    'temp_dir': tempfile.mkdtemp(prefix='jinjastatic'),
     'config': {},
     'compiled': {},
     'compsheets': {},
     'minified': {},
 }
 
-def _handle_tag(format, type_, ctx, src, **kwargs):
+def _handle_tag(format, type_, ctx, src, debug=False, head=False, **kwargs):
     kwargs.setdefault('type', type_)
-    inHead = kwargs.pop('head', False)
     if g['debug']:
         return format.format(
             src,
             u' '.join('{0}={1!r}'.format(k, _force_str(v)) for k, v in kwargs.items()))
-    key = (type_, inHead)
+    elif debug:
+        return u''
+    key = (type_, head)
     ctxname = ctx.name
     min_dict = g['minified'].setdefault(ctxname, {})
-    script_list = g[key]
+
     if min_dict.get(key):
         return ''
-    elif ctxname in script_list and g['compiled']:
+    elif ctxname in g.get(key, {}) and g['compiled']:
         files = OrderedDict([(g['compiled'][orig], 1)
-                             for orig in script_list[ctxname]]).keys()
+                             for orig in g[key][ctxname]]).keys()
         min_dict[key] = True
         return u'\n'.join(format.format(src, 'type="{0}"'.format(type_))
                           for src in files)
-    elif ctxname in script_list:
-        script_list[ctxname].append(src)
+    elif type_ in pre_compilers:
+        pre_compile(src, type_, head, ctxname)
     else:
-        script_list[ctxname] = [src]
+        g[key].setdefault(ctxname, []).append(src.lstrip('/'))
     return '**FIRSTPASS**'
 
 @jinjatagext.simple_context_tag
@@ -65,19 +84,34 @@ def style(ctx, href, **kwargs):
     return _handle_tag(u'<link rel="stylesheet" href="{0}" {1}>',
                        u'text/css', ctx, href, **kwargs)
 
+@jinjatagext.simple_context_tag
+def less(ctx, href, **kwargs):
+    return _handle_tag(u'<link rel="stylesheet/less" href="{0}" {1}>',
+                       u'text/less', ctx, href, **kwargs)
+
+@jinjatagext.simple_context_tag
+def coffee(ctx, src, **kwargs):
+    return _handle_tag(u'<script src="{0}" {1}></script>', u'text/coffeescript', ctx,
+                       src, **kwargs)
 
 def clear_data():
+    try:
+        shutil.rmtree(g['temp_dir'])
+    except:
+        pass
     g.update({
             ('text/css', False): {},
             ('text/javascript', False): {},
             ('text/css', True): {},
             ('text/javascript', True): {},
             'compiled': {},
+            'temp_dir': tempfile.mkdtemp(prefix='jinjastatic'),
             'minified': {},
             })
 
-def set_config(debug, config):
+def set_config(debug, config, base_dir):
     g['debug'] = debug
+    g['base_dir'] = base_dir
     mapper = config.get('map', {})
     config['map'] = {}
     for k, v in mapper.items():
@@ -88,10 +122,6 @@ def set_config(debug, config):
 def compile(base_dir, output_dir, dest_dir):
     config = g['config']
     _remove_old_files(output_dir)
-    command = {
-        'text/javascript': 'uglifyjs {0}',
-        'text/css': 'uglifycss {0}',
-        }
 
     rel_output = '/' + output_dir[len(dest_dir):].lstrip('/')
 
@@ -108,14 +138,64 @@ def compile(base_dir, output_dir, dest_dir):
             file_comp[aggregate].append(filename)
         for target, filelist in file_comp.items():
             abstarget = os.path.join(output_dir, target)
-            absfilelist = [os.path.join(base_dir, filename.lstrip('/')) for filename in filelist]
-            output = envoy.run(command[key[0]].format(' '.join(absfilelist)))
+            absfilelist = [os.path.join(base_dir, filename) for filename in filelist]
+            logger.info('Compiling {0}'.format(abstarget))
+            print compilers[key[0]] % ' '.join(pipes.quote(f) for f in absfilelist)
+            output = envoy.run(compilers[key[0]] % ' '.join(pipes.quote(f) for f in absfilelist))
             if output.status_code:
                 raise RuntimeError(output.std_err)
             with open(abstarget, 'wb+') as f:
                 f.write(output.std_out)
             target = os.path.join(rel_output, target)
             g['compiled'].update(dict((filename, target) for filename in filelist))
+
+
+g = {
+    'debug': False,
+    ('text/css', False): {},
+    ('text/javascript', False): {},
+    ('text/css', True): {},
+    ('text/javascript', True): {},
+    'temp_dir': tempfile.mkdtemp(prefix='jinjastatic'),
+    'config': {},
+    'compiled': {},
+    'compsheets': {},
+    'minified': {},
+}
+
+def pre_compile(src, type_, head, ctxname):
+    compiler, type_ = pre_compilers[type_]
+    key = (type_, head)
+    script_list = g[key].setdefault(ctxname, [])
+    new_name = os.path.join(g['temp_dir'], hashlib.md5(src).hexdigest())
+    if new_name in script_list:
+        return
+    print new_name
+    print os.path.exists(new_name)
+    if os.path.exists(new_name):
+        return
+
+    old_file = os.path.join(g['base_dir'], src.lstrip('/'))
+
+    logger.info('Pre-compiling {0} -> {1}'.format(old_file, new_name))
+
+    params = {'input': pipes.quote(old_file)}
+    use_stdout = True
+
+    if '%(output)s' in compiler:
+        use_stdout = False
+        params['output'] = pipes.quote(new_name)
+
+    output = envoy.run(compiler % params)
+    if output.status_code:
+        raise RuntimeError(output.std_err)
+    script_list.append(new_name)
+    if not use_stdout:
+        return
+    with open(new_name, 'wb+') as f:
+        f.write(output.std_out)
+
+
 
 def _remove_old_files(output_dir):
     for fname in glob.glob(os.path.join(output_dir, '*_min*')):

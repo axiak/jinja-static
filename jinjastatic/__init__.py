@@ -44,8 +44,10 @@ def run():
         else:
             compiledir = os.path.join(args.dest, 'compiled')
 
-    if not os.path.exists(compiledir):
-        os.makedirs(compiledir)
+        if not os.path.exists(compiledir):
+            os.makedirs(compiledir)
+    else:
+        compiledir = None
 
     config = {}
     if os.path.exists(args.config):
@@ -68,7 +70,7 @@ def compile_jinja(source, dest, config, incremental, debug, compiledir):
 
     staticlib.clear_data()
 
-    staticlib.set_config(debug, config)
+    staticlib.set_config(debug, config, source)
     if not debug:
         walk_and_compile(env, source, dest, incremental, save=False)
         staticlib.compile(source, compiledir, dest)
