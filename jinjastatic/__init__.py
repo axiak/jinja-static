@@ -1,6 +1,8 @@
 import os
 import sys
 import argparse
+import logging
+import shutil
 
 import yaml
 import jinja2
@@ -9,7 +11,11 @@ import jinjatag
 
 import staticlib
 
+logger = logging.getLogger('jinjastatic')
+
 def run():
+    configure_logging()
+
     p = argparse.ArgumentParser(description="Compile static templates")
     p.add_argument('-s', '--source', required=True,
                    help="Source file or directory.")
@@ -23,21 +29,39 @@ def run():
                    help="Minify and compile static files for use in production.")
     p.add_argument('-c', '--config', default='config.yml',
                    help='Name of config file with settings.')
+    p.add_argument('-q', '--quiet', action="store_true", default=False,
+                   help='Suppress output')
+    p.add_argument('-x', '--compiledir', default=None,
+                   help='Default directory to house compiled files.')
     args = p.parse_args()
+
+    if args.quiet:
+        logger.setLevel(logging.ERROR)
+
+    if args.production:
+        if args.compiledir:
+            compiledir = args.compiledir
+        else:
+            compiledir = os.path.join(args.dest, 'compiled')
+
+    if not os.path.exists(compiledir):
+        os.makedirs(compiledir)
 
     config = {}
     if os.path.exists(args.config):
-        with open(p.conf) as f:
+        with open(args.config) as f:
             config = yaml.load(f.read())
+
+    print config
 
     if args.watch:
         print("Not supported yet")
         return
 
-    compile_jinja(args.source, args.dest, config, not args.full and not args.production, not args.production)
+    compile_jinja(args.source, args.dest, config, not args.full and not args.production, not args.production, compiledir)
 
 
-def compile_jinja(source, dest, config, incremental, debug):
+def compile_jinja(source, dest, config, incremental, debug, compiledir):
     jinja_tag = jinjatag.JinjaTag()
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(source), extensions=[jinja_tag])
     jinja_tag.init()
@@ -47,35 +71,66 @@ def compile_jinja(source, dest, config, incremental, debug):
     staticlib.set_config(debug, config)
     if not debug:
         walk_and_compile(env, source, dest, incremental, save=False)
-        staticlib.compile(source, 'output')
+        staticlib.compile(source, compiledir, dest)
     walk_and_compile(env, source, dest, incremental, save=True)
 
 def walk_and_compile(env, source, dest, incremental, save=True):
     for dirpath, dirnames, filenames in os.walk(source, followlinks=True):
-        reldir = dirpath[len(source) + 1:]
+        reldir = dirpath[len(source):].lstrip('/')
         for filename in filenames:
             if not filename.lower().endswith('.html'):
+                if save:
+                    copy_file(os.path.join(source, reldir, filename),
+                              os.path.join(dest, reldir, filename),
+                              incremental)
                 continue
             if save:
                 target_file = os.path.join(dest, reldir, filename)
+                if filename.startswith('_'):
+                    logger.debug("Skipping {0}".format(filename))
+                    continue
             else:
                 target_file = None
             try:
                 compile_file(env, os.path.join(reldir, filename),
                              os.path.join(dirpath, filename), target_file, incremental)
             except Exception as e:
-                logging.error("   In file {0}: {1}".format(os.path.join(reldir, filename),
+                logger.error("   In file {0}: {1}".format(os.path.join(reldir, filename),
                                                         str(e)), exc_info=True)
 
+def copy_file(source, dest, incremental):
+    if not incremental or is_updated(source, dest):
+        if not os.path.exists(os.path.dirname(dest)):
+            os.makedirs(os.path.dirname(dest))
+        shutil.copyfile(source, dest)
 
 def compile_file(env, source_name, source_file, dest_file, incremental):
-    if incremental and os.stat(source_file).st_mtime <= os.stat(dest_file).st_mtime:
+    if incremental and not is_updated(source_file, dest_file):
         return
+
+    logger.debug("Compiling {0} -> {1}".format(source_file, dest_file))
     result = env.get_template(source_name).render().encode('utf8')
     if not dest_file:
         return
-    with open(dest_file, 'w+') as f:
+    with with_dir(open, dest_file, 'w+') as f:
         f.write(result)
+
+def is_updated(old_file, new_file):
+    return not os.path.exists(new_file) or \
+        os.stat(old_file).st_mtime > os.stat(new_file).st_mtime
+
+def with_dir(callback, filename, *args, **kwargs):
+    dirname = os.path.dirname(filename)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    return callback(filename, *args, **kwargs)
+
+def configure_logging():
+    logger.setLevel(logging.DEBUG)
+    fh = logging.StreamHandler()
+    formatter = logging.Formatter("%(message)s")
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
 
 if __name__ == '__main__':

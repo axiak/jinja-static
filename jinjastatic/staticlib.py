@@ -10,7 +10,7 @@ except ImportError:
     from ordereddict import OrderedDict
 
 import envoy
-import jinjatag
+import jinjatagext
 
 extensions = {
     'text/css': 'css',
@@ -35,7 +35,7 @@ def _handle_tag(format, type_, ctx, src, **kwargs):
     if g['debug']:
         return format.format(
             src,
-            u' '.join('{0}={1!r}'.format(k, v) for k, v in kwargs.items()))
+            u' '.join('{0}={1!r}'.format(k, _force_str(v)) for k, v in kwargs.items()))
     key = (type_, inHead)
     ctxname = ctx.name
     min_dict = g['minified'].setdefault(ctxname, {})
@@ -54,13 +54,13 @@ def _handle_tag(format, type_, ctx, src, **kwargs):
         script_list[ctxname] = [src]
     return '**FIRSTPASS**'
 
-@jinjatag.simple_context_tag
+@jinjatagext.simple_context_tag
 def script(ctx, src, **kwargs):
-    return _handle_tag(u'<script src="{0} {1}></script>', u'text/javascript', ctx,
+    return _handle_tag(u'<script src="{0}" {1}></script>', u'text/javascript', ctx,
                        src, **kwargs)
 
 
-@jinjatag.simple_context_tag
+@jinjatagext.simple_context_tag
 def style(ctx, href, **kwargs):
     return _handle_tag(u'<link rel="stylesheet" href="{0}" {1}>',
                        u'text/css', ctx, href, **kwargs)
@@ -85,13 +85,16 @@ def set_config(debug, config):
             config['map'][f] = k
     g['config'] = config
 
-def compile(base_dir, output_dir):
+def compile(base_dir, output_dir, dest_dir):
     config = g['config']
     _remove_old_files(output_dir)
     command = {
         'text/javascript': 'uglifyjs {0}',
         'text/css': 'uglifycss {0}',
         }
+
+    rel_output = '/' + output_dir[len(dest_dir):].lstrip('/')
+
     for key in g:
         if not isinstance(key, tuple):
             continue
@@ -101,16 +104,17 @@ def compile(base_dir, output_dir):
         files = OrderedDict((filename, 1) for template in filemap for filename in filemap[template]).keys()
         file_comp = collections.defaultdict(list)
         for filename in files:
-            aggregate = _decorate_key(config['map'].get(filename, 'compiled_.' + ext), unique_key)
+            aggregate = _decorate_key(config['map'].get(filename, 'maincompiled.' + ext), unique_key)
             file_comp[aggregate].append(filename)
         for target, filelist in file_comp.items():
             abstarget = os.path.join(output_dir, target)
-            absfilelist = [os.path.join(base_dir, filename) for filename in filelist]
+            absfilelist = [os.path.join(base_dir, filename.lstrip('/')) for filename in filelist]
             output = envoy.run(command[key[0]].format(' '.join(absfilelist)))
             if output.status_code:
                 raise RuntimeError(output.std_err)
             with open(abstarget, 'wb+') as f:
                 f.write(output.std_out)
+            target = os.path.join(rel_output, target)
             g['compiled'].update(dict((filename, target) for filename in filelist))
 
 def _remove_old_files(output_dir):
@@ -123,3 +127,9 @@ def _decorate_key(filename, key):
 
 def _gen_key():
     return hashlib.md5(str(time.time() + random.random())).hexdigest()[:10] + '_min'
+
+
+def _force_str(obj):
+    if isinstance(obj, unicode):
+        return obj.encode('utf8')
+    return str(obj)

@@ -1,8 +1,8 @@
-
+from jinja2 import nodes
 try:
     from jinjatag import simple_context_tag
 except ImportError:
-    from jinjatag.decorators
+    from jinjatag import decorators
     @decorators.create_extension_decorator
     class simple_context_tag(decorators.BaseTag):
         def parse_attrs(self, parser, add_id=True, with_context=False):
