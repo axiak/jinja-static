@@ -16,6 +16,8 @@ except ImportError:
 import envoy
 import jinjatagext
 
+from utils import is_updated
+
 logger = logging.getLogger('jinjastatic')
 
 extensions = {
@@ -24,8 +26,8 @@ extensions = {
     }
 
 pre_compilers = {
-    'text/less': ('lessc %(input)s', 'text/css'),
-    'text/coffeescript': ('coffee --join %(output)s -c %(input)s', 'text/javascript'),
+    'text/less': ('lessc %(input)s', 'text/css', 'css',),
+    'text/coffeescript': ('coffee --join %(output)s -c %(input)s', 'text/javascript', 'js',),
     }
 
 compilers = {
@@ -69,6 +71,7 @@ def _handle_tag(format, type_, ctx, src, debug=False, head=False, **kwargs):
                           for src in files)
     elif type_ in pre_compilers:
         pre_compile(src, type_, head, ctxname)
+        return u''
     else:
         g[key].setdefault(ctxname, []).append(src.lstrip('/'))
     return '**FIRSTPASS**'
@@ -125,6 +128,8 @@ def compile(base_dir, output_dir, dest_dir):
 
     rel_output = '/' + output_dir[len(dest_dir):].lstrip('/')
 
+    static_dirs = set()
+
     for key in g:
         if not isinstance(key, tuple):
             continue
@@ -140,7 +145,6 @@ def compile(base_dir, output_dir, dest_dir):
             abstarget = os.path.join(output_dir, target)
             absfilelist = [os.path.join(base_dir, filename) for filename in filelist]
             logger.info('Compiling {0}'.format(abstarget))
-            print compilers[key[0]] % ' '.join(pipes.quote(f) for f in absfilelist)
             output = envoy.run(compilers[key[0]] % ' '.join(pipes.quote(f) for f in absfilelist))
             if output.status_code:
                 raise RuntimeError(output.std_err)
@@ -149,6 +153,21 @@ def compile(base_dir, output_dir, dest_dir):
             target = os.path.join(rel_output, target)
             g['compiled'].update(dict((filename, target) for filename in filelist))
 
+            if key[0] == 'text/css':
+                static_dirs.update(os.path.dirname(filename) for filename in absfilelist)
+
+    for d in static_dirs:
+        for dirpath, dirnames, filenames in os.walk(d, followlinks=True):
+            reldir = dirpath[len(d):].lstrip('/')
+            target_dir = os.path.join(output_dir, reldir)
+            for filepath in filenames:
+                target_path = os.path.join(target_dir, filepath)
+                filepath = os.path.join(dirpath, filepath)
+                if is_updated(filepath, target_path):
+                    new_dir = os.path.dirname(target_path)
+                    if not os.path.exists(new_dir):
+                        os.makedirs(new_dir)
+                    shutil.copyfile(filepath, target_path)
 
 g = {
     'debug': False,
@@ -164,18 +183,21 @@ g = {
 }
 
 def pre_compile(src, type_, head, ctxname):
-    compiler, type_ = pre_compilers[type_]
+    compiler, type_, ext = pre_compilers[type_]
     key = (type_, head)
     script_list = g[key].setdefault(ctxname, [])
-    new_name = os.path.join(g['temp_dir'], hashlib.md5(src).hexdigest())
+    old_file = os.path.join(g['base_dir'], src.lstrip('/'))
+    new_name = os.path.join(os.path.dirname(src).strip('/'), 'compiled-' + hashlib.md5(src).hexdigest()) + "." + ext
+
     if new_name in script_list:
         return
-    print new_name
-    print os.path.exists(new_name)
-    if os.path.exists(new_name):
-        return
 
-    old_file = os.path.join(g['base_dir'], src.lstrip('/'))
+    script_list.append(new_name)
+
+    new_name = os.path.join(g['base_dir'], new_name.lstrip('/'))
+
+    if not is_updated(old_file, new_name):
+        return
 
     logger.info('Pre-compiling {0} -> {1}'.format(old_file, new_name))
 
@@ -189,7 +211,7 @@ def pre_compile(src, type_, head, ctxname):
     output = envoy.run(compiler % params)
     if output.status_code:
         raise RuntimeError(output.std_err)
-    script_list.append(new_name)
+
     if not use_stdout:
         return
     with open(new_name, 'wb+') as f:

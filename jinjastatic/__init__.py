@@ -9,7 +9,10 @@ import jinja2
 import logging
 import jinjatag
 
+
+from utils import is_updated
 import staticlib
+from watcher import setup_watch
 
 logger = logging.getLogger('jinjastatic')
 
@@ -44,6 +47,7 @@ def run():
         else:
             compiledir = os.path.join(args.dest, 'compiled')
 
+
         if not os.path.exists(compiledir):
             os.makedirs(compiledir)
     else:
@@ -54,19 +58,16 @@ def run():
         with open(args.config) as f:
             config = yaml.load(f.read())
 
-    print config
-
     if args.watch:
-        print("Not supported yet")
+        compile_jinja(args.source, args.dest, config, True, True, compiledir)
+        setup_watch(args.source, FileHandler(args.source, args.dest, config))
         return
 
     compile_jinja(args.source, args.dest, config, not args.full and not args.production, not args.production, compiledir)
 
 
 def compile_jinja(source, dest, config, incremental, debug, compiledir):
-    jinja_tag = jinjatag.JinjaTag()
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(source), extensions=[jinja_tag])
-    jinja_tag.init()
+    env = get_jinja_env(source)
 
     staticlib.clear_data()
 
@@ -100,6 +101,27 @@ def walk_and_compile(env, source, dest, incremental, save=True):
                 logger.error("   In file {0}: {1}".format(os.path.join(reldir, filename),
                                                         str(e)), exc_info=True)
 
+class FileHandler(object):
+    def __init__(self, source, dest, config):
+        self.source = source
+        self.dest = dest
+        self.config = config
+
+    def __call__(self, files):
+        env = get_jinja_env(self.source)
+        for fname in files:
+            if fname.lower().endswith('.html'):
+                target_file = os.path.join(self.dest, fname)
+                if fname.startswith('_'):
+                    logger.debug("Skipping {0}".format(fname))
+                    continue
+                compile_file(env, fname, os.path.join(self.source, fname),
+                             target_file, True)
+            else:
+                copy_file(os.path.join(self.source, fname),
+                          os.path.join(self.dest, fname),
+                          True)
+
 def copy_file(source, dest, incremental):
     if not incremental or is_updated(source, dest):
         if not os.path.exists(os.path.dirname(dest)):
@@ -110,16 +132,19 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
     if incremental and not is_updated(source_file, dest_file):
         return
 
-    logger.debug("Compiling {0} -> {1}".format(source_file, dest_file))
+    if dest_file:
+        logger.debug("Compiling {0} -> {1}".format(source_file, dest_file))
     result = env.get_template(source_name).render().encode('utf8')
     if not dest_file:
         return
     with with_dir(open, dest_file, 'w+') as f:
         f.write(result)
 
-def is_updated(old_file, new_file):
-    return not os.path.exists(new_file) or \
-        os.stat(old_file).st_mtime > os.stat(new_file).st_mtime
+def get_jinja_env(source):
+    jinja_tag = jinjatag.JinjaTag()
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(source), extensions=[jinja_tag])
+    jinja_tag.init()
+    return env
 
 def with_dir(callback, filename, *args, **kwargs):
     dirname = os.path.dirname(filename)
