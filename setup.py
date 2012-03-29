@@ -8,6 +8,7 @@ import sys
 
 
 requirements = [
+    'networkx',
     'jinja2',
     'jinjatag',
     'watchdog==0.6.0',

@@ -13,6 +13,7 @@ import jinjatag
 from utils import is_updated
 import staticlib
 from watcher import setup_watch
+from dependencies import Dependencies
 
 logger = logging.getLogger('jinjastatic')
 
@@ -58,26 +59,36 @@ def run():
         with open(args.config) as f:
             config = yaml.load(f.read())
 
+    env, loader = get_jinja_env(args.source)
+    dependencies = Dependencies(args.source, env, loader)
+    dependencies.load_graph()
+
     if args.watch:
-        compile_jinja(args.source, args.dest, config, True, True, compiledir)
-        setup_watch(args.source, FileHandler(args.source, args.dest, config))
+        compile_jinja(args.source, args.dest, config, True, True, compiledir, dependencies)
+        setup_watch(args.source, FileHandler(args.source, args.dest, config, dependencies))
         return
 
-    compile_jinja(args.source, args.dest, config, not args.full and not args.production, not args.production, compiledir)
+    compile_jinja(args.source, args.dest, config, not args.full and not args.production, not args.production, compiledir, dependencies)
 
 
-def compile_jinja(source, dest, config, incremental, debug, compiledir):
-    env = get_jinja_env(source)
+def compile_jinja(source, dest, config, incremental, debug, compiledir, dependencies):
+    env = get_jinja_env(source)[0]
 
     staticlib.clear_data()
 
     staticlib.set_config(debug, config, source)
-    if not debug:
-        walk_and_compile(env, source, dest, incremental, save=False)
-        staticlib.compile(source, compiledir, dest)
-    walk_and_compile(env, source, dest, incremental, save=True)
 
-def walk_and_compile(env, source, dest, incremental, save=True):
+    if incremental:
+        changed = walk_for_changed(source, dest, dependencies)
+    else:
+        changed = ()
+
+    if not debug:
+        walk_and_compile(env, source, dest, incremental, False, changed)
+        staticlib.compile(source, compiledir, dest)
+    walk_and_compile(env, source, dest, incremental, True, changed)
+
+def walk_and_compile(env, source, dest, incremental, save, changed):
     for dirpath, dirnames, filenames in os.walk(source, followlinks=True):
         reldir = dirpath[len(source):].lstrip('/')
         for filename in filenames:
@@ -89,32 +100,42 @@ def walk_and_compile(env, source, dest, incremental, save=True):
                 continue
             if save:
                 target_file = os.path.join(dest, reldir, filename)
-                if filename.startswith('_'):
-                    logger.debug("Skipping {0}".format(filename))
-                    continue
             else:
                 target_file = None
             try:
-                compile_file(env, os.path.join(reldir, filename),
-                             os.path.join(dirpath, filename), target_file, incremental)
+                if not incremental or os.path.join(reldir, filename) in changed:
+                    compile_file(env, os.path.join(reldir, filename),
+                                 os.path.join(dirpath, filename), target_file, False)
             except Exception as e:
                 logger.error("   In file {0}: {1}".format(os.path.join(reldir, filename),
                                                         str(e)), exc_info=True)
 
+def walk_for_changed(source, dest, dependencies):
+    changed = set()
+    for dirpath, dirnames, filenames in os.walk(source, followlinks=True):
+        reldir = dirpath[len(source):].lstrip('/')
+        for filename in filenames:
+            if not filename.lower().endswith('.html'):
+                continue
+            name = os.path.join(reldir, filename)
+            if is_updated(os.path.join(source, reldir, filename),
+                          os.path.join(dest, reldir, filename)):
+                changed.add(name)
+                changed.update(dependencies.get_affected_files(name))
+    return changed
+
+
 class FileHandler(object):
-    def __init__(self, source, dest, config):
+    def __init__(self, source, dest, config, dependencies):
         self.source = source
         self.dest = dest
         self.config = config
 
     def __call__(self, files):
-        env = get_jinja_env(self.source)
+        env = get_jinja_env(self.source)[0]
         for fname in files:
             if fname.lower().endswith('.html'):
                 target_file = os.path.join(self.dest, fname)
-                if fname.startswith('_'):
-                    logger.debug("Skipping {0}".format(fname))
-                    continue
                 compile_file(env, fname, os.path.join(self.source, fname),
                              target_file, True)
             else:
@@ -142,9 +163,10 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
 
 def get_jinja_env(source):
     jinja_tag = jinjatag.JinjaTag()
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(source), extensions=[jinja_tag])
+    loader = jinja2.FileSystemLoader(source)
+    env = jinja2.Environment(loader=loader, extensions=[jinja_tag])
     jinja_tag.init()
-    return env
+    return env, loader
 
 def with_dir(callback, filename, *args, **kwargs):
     dirname = os.path.dirname(filename)
