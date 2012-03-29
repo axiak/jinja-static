@@ -8,6 +8,7 @@ import yaml
 import jinja2
 import logging
 import jinjatag
+import datetime
 
 
 from utils import is_updated
@@ -65,7 +66,10 @@ def run():
 
     if args.watch:
         compile_jinja(args.source, args.dest, config, True, True, compiledir, dependencies)
-        setup_watch(args.source, FileHandler(args.source, args.dest, config, dependencies))
+        setup_watch(args.source,
+                    FileHandler(args.source, args.dest, config, dependencies),
+                    ['.*', '*#*', '*~'],
+                    )
         return
 
     compile_jinja(args.source, args.dest, config, not args.full and not args.production, not args.production, compiledir, dependencies)
@@ -162,7 +166,15 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
 
     if dest_file:
         logger.debug("Compiling {0} -> {1}".format(source_file, dest_file))
-    result = env.get_template(source_name).render().encode('utf8')
+    ctx = {
+        'datetime': datetime,
+        'env': EnvWrapper(),
+        }
+    try:
+        result = env.get_template(source_name).render(ctx).encode('utf8')
+    except Exception as e:
+        logger.error("Error compiling {0}".format(source_name), exc_info=True)
+        return
     if not dest_file:
         return
     with with_dir(open, dest_file, 'w+') as f:
@@ -187,6 +199,12 @@ def configure_logging():
     formatter = logging.Formatter("%(message)s")
     fh.setFormatter(formatter)
     logger.addHandler(fh)
+
+
+class EnvWrapper(object):
+    def __getattr__(self, name):
+        return os.environ.get(name)
+
 
 
 if __name__ == '__main__':

@@ -2,7 +2,9 @@ import os
 import jinja2
 from jinja2 import meta
 import networkx as nx
+import logging
 
+logger = logging.getLogger('jinjastatic')
 
 class Dependencies(object):
     def __init__(self, source, env, loader):
@@ -35,6 +37,8 @@ class Dependencies(object):
 
     def recompute_file(self, template):
         old_attached = []
+        if not template.endswith('.html'):
+            return
         if template in self.dependency_graph:
             old_attached = list(self.dependency_graph.successors(template))
             self.dependency_graph.remove_node(template)
@@ -47,7 +51,7 @@ class Dependencies(object):
     def _get_requirements(self, template_name):
         try:
             return list(meta.find_referenced_templates(self.env.parse(self.loader.get_source(self.env, template_name))))
-        except int:
-            pass
+        except Exception as e:
+            logger.error("Error analyzing {0}".format(template_name), exc_info=True)
         return []
 

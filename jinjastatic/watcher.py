@@ -3,6 +3,7 @@ import os
 import time
 import threading
 import logging
+import fnmatch
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileDeletedEvent
@@ -15,17 +16,22 @@ logger = logging.getLogger('jinjastatic')
 
 
 class EventHandler(FileSystemEventHandler):
-    def __init__(self, base_path, callback):
+    def __init__(self, base_path, callback, excludes=[]):
         self.base_path = os.path.abspath(base_path)
         self.modified_files = set()
         self.promise = None
         self.callback = callback
+        self.excludes = excludes
 
     def on_any_event(self, event):
         if event.is_directory:
             return
         path = event.src_path
         path = path[len(self.base_path):].lstrip('/')
+        for exclude in self.excludes:
+            if fnmatch.fnmatch(path, exclude):
+                return
+
         if isinstance(event, FileDeletedEvent):
             if path in self.modified_files:
                 self.modified_files.remove(path)
@@ -41,9 +47,9 @@ class EventHandler(FileSystemEventHandler):
         self.callback(list(f))
 
 
-def setup_watch(src_dir, callback):
+def setup_watch(src_dir, callback, excludes=[]):
     observer = Observer()
-    observer.schedule(EventHandler(src_dir, callback), path=src_dir, recursive=True)
+    observer.schedule(EventHandler(src_dir, callback, excludes), path=src_dir, recursive=True)
     observer.start()
     logger.info("Set up watching on {0} recursively. (CTRL-C to stop)".format(src_dir))
     try:
