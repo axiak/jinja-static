@@ -130,14 +130,21 @@ class FileHandler(object):
         self.source = source
         self.dest = dest
         self.config = config
+        self.dependencies = dependencies
 
     def __call__(self, files):
         env = get_jinja_env(self.source)[0]
         for fname in files:
+            self.dependencies.recompute_file(fname)
+        total_changed = set()
+        for fname in files:
+            total_changed.add(fname)
+            total_changed.update(self.dependencies.get_affected_files(fname))
+        for fname in total_changed:
             if fname.lower().endswith('.html'):
                 target_file = os.path.join(self.dest, fname)
                 compile_file(env, fname, os.path.join(self.source, fname),
-                             target_file, True)
+                             target_file, False)
             else:
                 copy_file(os.path.join(self.source, fname),
                           os.path.join(self.dest, fname),

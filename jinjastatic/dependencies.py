@@ -34,10 +34,13 @@ class Dependencies(object):
                         self.dependency_graph.add_edge(requirement, name)
 
     def recompute_file(self, template):
+        old_attached = list(self.dependency_graph.successors(template))
         self.dependency_graph.remove_node(template)
         for requirement in self._get_requirements(template):
             if requirement:
                 self.dependency_graph.add_edge(requirement, template)
+        for old_name in old_attached:
+            self.dependency_graph.add_edge(template, old_name)
 
     def _get_requirements(self, template_name):
         try:

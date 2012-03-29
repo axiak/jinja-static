@@ -45,6 +45,7 @@ def setup_watch(src_dir, callback):
     observer = Observer()
     observer.schedule(EventHandler(src_dir, callback), path=src_dir, recursive=True)
     observer.start()
+    logger.info("Set up watching on {0} recursively. (CTRL-C to stop)".format(src_dir))
     try:
         while True:
             time.sleep(1)
