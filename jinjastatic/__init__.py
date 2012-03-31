@@ -38,10 +38,14 @@ def run():
                    help='Suppress output')
     p.add_argument('-x', '--compiledir', default=None,
                    help='Default directory to house compiled files.')
+    p.add_argument('-v', '--verbose', action='store_true', default=False,
+                   help='Verbose output')
     args = p.parse_args()
 
     if args.quiet:
         logger.setLevel(logging.ERROR)
+    elif args.verbose:
+        logger.setLevel(logging.DEBUG)
 
     if args.production:
         if args.compiledir:
@@ -152,12 +156,13 @@ class FileHandler(object):
             else:
                 copy_file(os.path.join(self.source, fname),
                           os.path.join(self.dest, fname),
-                          True)
+                          False)
 
 def copy_file(source, dest, incremental):
     if not incremental or is_updated(source, dest):
         if not os.path.exists(os.path.dirname(dest)):
             os.makedirs(os.path.dirname(dest))
+        logger.debug("Copying file {0} to output directory".format(source))
         shutil.copyfile(source, dest)
 
 def compile_file(env, source_name, source_file, dest_file, incremental):
@@ -165,7 +170,7 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
         return
 
     if dest_file:
-        logger.debug("Compiling {0} -> {1}".format(source_file, dest_file))
+        logger.info("Compiling {0} -> {1}".format(source_file, dest_file))
     ctx = {
         'datetime': datetime,
         'env': EnvWrapper(),
@@ -194,7 +199,7 @@ def with_dir(callback, filename, *args, **kwargs):
     return callback(filename, *args, **kwargs)
 
 def configure_logging():
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     fh = logging.StreamHandler()
     formatter = logging.Formatter("%(message)s")
     fh.setFormatter(formatter)

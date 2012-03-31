@@ -32,6 +32,8 @@ class EventHandler(FileSystemEventHandler):
             if fnmatch.fnmatch(path, exclude):
                 return
 
+        logger.debug("Caught event: {0}".format(event))
+
         if isinstance(event, FileDeletedEvent):
             if path in self.modified_files:
                 self.modified_files.remove(path)
@@ -44,6 +46,7 @@ class EventHandler(FileSystemEventHandler):
     def run_combined(self):
         f = self.modified_files
         self.modified_files = set()
+        logger.debug("Changed files: {0}".format(','.join(f)))
         self.callback(list(f))
 
 
