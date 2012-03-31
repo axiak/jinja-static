@@ -203,7 +203,7 @@ def configure_logging():
 
 class EnvWrapper(object):
     def __getattr__(self, name):
-        return os.environ.get(name)
+        return os.environ.get(name, '')
 
 
 
