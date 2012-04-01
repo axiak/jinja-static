@@ -100,11 +100,11 @@ def walk_and_compile(env, source, dest, incremental, save, changed):
     for dirpath, dirnames, filenames in os.walk(source, followlinks=True):
         reldir = dirpath[len(source):].lstrip('/')
         for filename in filenames:
+            fullsource = os.path.join(source, reldir, filename)
+            fulldest = os.path.join(dest, reldir, filename)
             if not filename.lower().endswith('.html'):
-                if save:
-                    copy_file(os.path.join(source, reldir, filename),
-                              os.path.join(dest, reldir, filename),
-                              incremental)
+                if save and not staticlib.handle_precompile_file(fullsource, fulldest, incremental=incremental):
+                    copy_file(fullsource, fulldest, incremental)
                 continue
             if save:
                 target_file = os.path.join(dest, reldir, filename)
@@ -149,14 +149,15 @@ class FileHandler(object):
             total_changed.add(fname)
             total_changed.update(self.dependencies.get_affected_files(fname))
         for fname in total_changed:
+            fullsource = os.path.join(self.source, fname)
+            fulldest = os.path.join(self.dest, fname)
             if fname.lower().endswith('.html'):
-                target_file = os.path.join(self.dest, fname)
-                compile_file(env, fname, os.path.join(self.source, fname),
-                             target_file, False)
+                compile_file(env, fname, fullsource,
+                             fulldest, False)
+            elif staticlib.handle_precompile_file(fullsource, fulldest):
+                continue
             else:
-                copy_file(os.path.join(self.source, fname),
-                          os.path.join(self.dest, fname),
-                          False)
+                copy_file(fullsource, fulldest, False)
 
 def copy_file(source, dest, incremental):
     if not incremental or is_updated(source, dest):

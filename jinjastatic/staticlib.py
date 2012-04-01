@@ -26,15 +26,22 @@ extensions = {
     }
 
 pre_compilers = {
-    'text/less': ('lessc %(input)s', 'text/css', 'css',),
-    'text/coffeescript': ('coffee --join %(output)s -c %(input)s', 'text/javascript', 'js',),
+                # compiler, new mime type, new ext, on-demand compilation
+    'text/less': ('lessc %(input)s', 'text/css', 'css', False),
+    'text/coffeescript': ('coffee --join %(output)s -c %(input)s', 'text/javascript', 'js', True),
     }
+
+ext_mime = {
+    'less': 'text/less',
+    'coffee': 'text/coffeescript',
+    'js': 'text/javascript',
+    'css': 'text/css',
+}
 
 compilers = {
     'text/javascript': './runyui.sh --nomunge %(input)s',
     'text/css': 'uglifycss %(input)s',
     }
-
 
 g = {
     'debug': False,
@@ -53,6 +60,9 @@ def _handle_tag(type_, ctx, src, debug=False, head=False, **kwargs):
     kwargs.setdefault('type', type_)
     format = style_formats[type_]
     if g['debug']:
+        if type_ in pre_compilers and pre_compilers[type_][3]:
+            src = rename_ext(src, pre_compilers[type_][2])
+            kwargs['type'] = pre_compilers[type_][1]
         return format.format(
             src,
             u' '.join('{0}={1!r}'.format(k, _force_str(v)) for k, v in kwargs.items()))
@@ -205,7 +215,7 @@ g = {
 }
 
 def pre_compile(src, type_, head, ctxname):
-    compiler, type_, ext = pre_compilers[type_]
+    compiler, type_, ext = pre_compilers[type_][:3]
     key = (type_, head)
     script_list = g[key].setdefault(ctxname, [])
     old_file = os.path.join(g['base_dir'], src.lstrip('/'))
@@ -221,23 +231,42 @@ def pre_compile(src, type_, head, ctxname):
     if not is_updated(old_file, new_name):
         return
 
-    logger.info('Pre-compiling {0} -> {1}'.format(old_file, new_name))
+    _run_precompile(old_file, new_name, compiler)
+
+
+def _run_precompile(old_file, new_file, compiler):
+    logger.info('Pre-compiling {0} -> {1}'.format(old_file, new_file))
 
     params = {'input': pipes.quote(old_file)}
     use_stdout = True
 
     if '%(output)s' in compiler:
         use_stdout = False
-        params['output'] = pipes.quote(new_name)
-
+        params['output'] = pipes.quote(new_file)
     output = envoy.run(compiler % params)
     if output.status_code:
         raise RuntimeError(output.std_err)
 
     if not use_stdout:
         return
-    with open(new_name, 'wb+') as f:
+    with open(new_file, 'wb+') as f:
         f.write(output.std_out)
+    return
+
+def handle_precompile_file(source, dest, incremental=False):
+    if '.' not in os.path.basename(source):
+        return False
+    ext = source.rsplit('.', 1)[1]
+    if not (ext in ext_mime and ext_mime[ext] in pre_compilers):
+        return False
+    compiler, type_, new_ext, incremental = pre_compilers[ext_mime[ext]][:4]
+    if not incremental:
+        return
+    dest = rename_ext(dest, new_ext)
+    if incremental and not is_updated(source, dest):
+        return False
+    _run_precompile(source, dest, compiler)
+    return True
 
 def read_file_data(filelist):
     result = []
@@ -272,3 +301,9 @@ def _force_str(obj):
     if isinstance(obj, unicode):
         return obj.encode('utf8')
     return str(obj)
+
+def rename_ext(filename, new_ext):
+    if '.' not in os.path.basename(filename):
+        return filename + '.' + new_ext
+    else:
+        return filename.rsplit('.', 1)[0] + '.' + new_ext

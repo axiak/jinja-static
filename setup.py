@@ -22,7 +22,7 @@ if sys.version_info[0] == 2 and sys.version_info[1] < 7:
 
 setup(
     name = 'jinjastatic',
-    version = '0.0.6',
+    version = '0.0.7',
 
     description = 'Static template compilation',
     long_description = '',
