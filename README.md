@@ -41,7 +41,38 @@ Here's an example of it in use:
 </html>
 ```
 
+In development mode, one would expect the rendered HTML to look like:
 
+```html
+<html>
+  <head>
+    <script src="/js/jquery.js" type="text/javascript"></script>
+    <script src="/js/other-js.js" type="text/javascript"></script>
+    <link rel="stylesheet" type="text/css" href="/css/mycss.css">
+  </head>
+  <body>
+    ...
+    <script src="/coffee/mycoffee.js" type="text/javascript"></script>
+  </body>
+</html>
+```
+
+Whereas in production the generated HTML would look closer to this:
+
+```html
+<html>
+  <head>
+    <script src="/compiled/main-424e3efg212_min.js" type="text/javascript"></script>
+    <link rel="stylesheet" type="text/css" href="/compiled/main-2ef32ac2a3_min.css">
+  </head>
+  <body>
+    ...
+    <script src="/compiled/main-323ce23ae3e_min.js" type="text/javascript"></script>
+  </body>
+</html>
+```
+
+Note that all media files in the same block of code are combined automatically (the grouping is done on whether or not you specify `head=True`).
 
 
 ## License
