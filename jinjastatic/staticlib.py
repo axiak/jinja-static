@@ -89,12 +89,14 @@ def _handle_tag(type_, ctx, src, debug=False, head=False, **kwargs):
         g[key].setdefault(ctxname, []).append(src.lstrip('/'))
     return '**FIRSTPASS**'
 
+
 style_formats = {
     'text/javascript': u'<script src="{0}" {1}></script>',
     'text/css': u'<link rel="stylesheet" href="{0}" {1}>',
     'text/less': u'<link rel="stylesheet/less" href="{0}" {1}>',
     'text/coffeescript': u'<script src="{0}" {1}></script>',
 }
+
 
 @jinjatagext.simple_context_tag
 def script(ctx, src, **kwargs):
@@ -179,6 +181,7 @@ def compile(base_dir, output_dir, dest_dir):
                 cmd = compiler_fmt
             output = envoy.run(cmd, data=data)
             if output.status_code:
+                sys.stderr.write("Error while running command: {0}\n".format(cmd))
                 raise RuntimeError(output.std_err)
             with open(abstarget, 'wb+') as f:
                 f.write(output.std_out)
@@ -245,6 +248,7 @@ def _run_precompile(old_file, new_file, compiler):
         params['output'] = pipes.quote(new_file)
     output = envoy.run(compiler % params)
     if output.status_code:
+        sys.stderr.write("Error while running command: {0}\n".format(compiler % params))
         raise RuntimeError(output.std_err)
 
     if not use_stdout:
