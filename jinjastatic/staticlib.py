@@ -1,10 +1,12 @@
 import os
+import sys
 import glob
 import time
 import pipes
 import shutil
 import random
 import tempfile
+import traceback
 import hashlib
 import logging
 import collections
@@ -179,10 +181,8 @@ def compile(base_dir, output_dir, dest_dir):
             else:
                 data = read_file_data([combined_file])
                 cmd = compiler_fmt
-            output = envoy.run(cmd, data=data)
-            if output.status_code:
-                sys.stderr.write("Error while running command: {0}\n".format(cmd))
-                raise RuntimeError(output.std_err)
+            output = run_command(cmd, data=data)
+
             with open(abstarget, 'wb+') as f:
                 f.write(output.std_out)
             target = os.path.join(rel_output, target)
@@ -246,10 +246,8 @@ def _run_precompile(old_file, new_file, compiler):
     if '%(output)s' in compiler:
         use_stdout = False
         params['output'] = pipes.quote(new_file)
-    output = envoy.run(compiler % params)
-    if output.status_code:
-        sys.stderr.write("Error while running command: {0}\n".format(compiler % params))
-        raise RuntimeError(output.std_err)
+
+    output = run_command(compiler % params)
 
     if not use_stdout:
         return
@@ -311,3 +309,16 @@ def rename_ext(filename, new_ext):
         return filename + '.' + new_ext
     else:
         return filename.rsplit('.', 1)[0] + '.' + new_ext
+
+def run_command(cmd, **kwargs):
+    try:
+        output = envoy.run(cmd, **kwargs)
+        std_err = output.std_err
+    except Exception as e:
+        status_code = 1
+        std_err = traceback.format_exc()
+    else:
+        status_code = output.status_code
+    if status_code:
+        sys.stderr.write("Error while running command: {0}\n".format(cmd))
+        sys.exit(1)
