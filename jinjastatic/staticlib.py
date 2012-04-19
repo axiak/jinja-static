@@ -21,7 +21,10 @@ import jinjatagext
 from utils import is_updated
 import notify
 
-notify.register("Jinja-Static")
+try:
+    notify.register("Jinja-Static")
+except Exception as e:
+    sys.stderr.write("Notifications not supported: {0}\n".format(traceback.format_exc()))
 
 logger = logging.getLogger('jinjastatic')
 
