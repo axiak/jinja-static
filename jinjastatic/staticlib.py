@@ -19,6 +19,9 @@ import envoy
 import jinjatagext
 
 from utils import is_updated
+import notify
+
+notify.register("Jinja-Static")
 
 logger = logging.getLogger('jinjastatic')
 
@@ -320,5 +323,7 @@ def run_command(cmd, **kwargs):
     else:
         status_code = output.status_code
     if status_code:
+        notify.send("Failure in Jinja-Static command", cmd,
+                    icon='gtk-dialog-critical', urgency='CRITICAL')
         sys.stderr.write("Error while running command: {0}\n".format(cmd))
         sys.exit(1)
