@@ -330,3 +330,4 @@ def run_command(cmd, **kwargs):
                     icon='gtk-dialog-critical', urgency='CRITICAL')
         sys.stderr.write("Error while running command: {0}\n".format(cmd))
         sys.exit(1)
+    return output
