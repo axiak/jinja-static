@@ -3,6 +3,7 @@ import sys
 import argparse
 import logging
 import shutil
+import importlib
 
 import yaml
 import jinja2
@@ -40,6 +41,8 @@ def run():
                    help='Default directory to house compiled files.')
     p.add_argument('-v', '--verbose', action='store_true', default=False,
                    help='Verbose output')
+    p.add_argument('-p', '--plugins', default=None,
+                   help="Template Plugins")
     args = p.parse_args()
 
     if args.quiet:
@@ -63,6 +66,11 @@ def run():
     if os.path.exists(args.config):
         with open(args.config) as f:
             config = yaml.load(f.read())
+
+    if args.plugins:
+        config['plugins'] = args.split()
+
+    config.setdefault("plugins", [])
 
     env, loader = get_jinja_env(args.source)
     dependencies = Dependencies(args.source, env, loader)
@@ -141,7 +149,7 @@ class FileHandler(object):
         self.dependencies = dependencies
 
     def __call__(self, files):
-        env = get_jinja_env(self.source)[0]
+        env = get_jinja_env(self.config, self.source)[0]
         for fname in files:
             self.dependencies.recompute_file(fname)
         total_changed = set()
@@ -178,7 +186,9 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
         'file': source_name,
         }
     try:
-        result = env.get_template(source_name).render(ctx).encode('utf8')
+        template = env.get_template(source_name)
+        run_plugins(template)
+        result = template.render(ctx).encode('utf8')
     except Exception as e:
         logger.error("Error compiling {0}".format(source_name), exc_info=True)
         return
@@ -187,12 +197,22 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
     with with_dir(open, dest_file, 'w+') as f:
         f.write(result)
 
-def get_jinja_env(source):
+def get_jinja_env(config, source):
     jinja_tag = jinjatag.JinjaTag()
     loader = jinja2.FileSystemLoader(source)
     env = jinja2.Environment(loader=loader, extensions=[jinja_tag])
+    run_plugins(payload)
     jinja_tag.init()
     return env, loader
+
+def run_plugins(plugins, payload):
+    for plugin in plugins:
+        module, name = plugin.rsplit('.', 1)
+        try:
+            getattr(importlib.import(module), name)(payload)
+        except Exception as e:
+            print "Error in {}: {}".format(plugin, e)
+
 
 def with_dir(callback, filename, *args, **kwargs):
     dirname = os.path.dirname(filename)
