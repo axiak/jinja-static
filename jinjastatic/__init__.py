@@ -175,6 +175,7 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
     ctx = {
         'datetime': datetime,
         'env': EnvWrapper(),
+        'file': source_name,
         }
     try:
         result = env.get_template(source_name).render(ctx).encode('utf8')
