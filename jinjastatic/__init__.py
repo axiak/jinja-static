@@ -72,7 +72,7 @@ def run():
 
     config.setdefault("plugins", [])
 
-    env, loader = get_jinja_env(args.source)
+    env, loader = get_jinja_env(config, args.source)
     dependencies = Dependencies(args.source, env, loader)
     dependencies.load_graph()
 
@@ -88,7 +88,7 @@ def run():
 
 
 def compile_jinja(source, dest, config, incremental, debug, compiledir, dependencies):
-    env = get_jinja_env(source)[0]
+    env = get_jinja_env(config, source)[0]
 
     staticlib.clear_data()
 
