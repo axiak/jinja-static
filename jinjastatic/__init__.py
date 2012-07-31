@@ -21,6 +21,8 @@ logger = logging.getLogger('jinjastatic')
 
 global_config = [None]
 
+sys.path.insert(0, os.getcwd())
+
 def run():
     configure_logging()
 
@@ -70,7 +72,7 @@ def run():
             config = yaml.load(f.read())
 
     if args.plugins:
-        config['plugins'] = args.split()
+        config['plugins'] = args.split(',')
 
     config.setdefault("plugins", [])
 

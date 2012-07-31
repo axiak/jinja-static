@@ -86,11 +86,12 @@ def _handle_tag(type_, ctx, src, debug=False, head=False, **kwargs):
     if min_dict.get(compiled_key):
         return ''
     elif ctxname in g.get(compiled_key, {}) and g['compiled']:
-        src = urlparse.urljoin(g['config'].get('static_root', ''), src)
         files = OrderedDict([(g['compiled'][orig], 1)
                              for orig in g[compiled_key][ctxname]]).keys()
         min_dict[compiled_key] = True
-        return u'\n'.join(format.format(src, 'type="{0}"'.format(compiled_key[0]))
+        src = urlparse.urljoin(g['config'].get('static_root', ''), src)
+        return u'\n'.join(format.format(urlparse.urljoin(g['config'].get('static_root', ''), src),
+                                        'type="{0}"'.format(compiled_key[0]))
                           for src in files)
     elif type_ in pre_compilers:
         pre_compile(src, type_, head, ctxname)
