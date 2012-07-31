@@ -191,7 +191,7 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
         }
     try:
         template = env.get_template(source_name)
-        run_plugins(global_config[0].plugins, template)
+        run_plugins(global_config[0]['plugins'], template)
         result = template.render(ctx).encode('utf8')
     except Exception as e:
         logger.error("Error compiling {0}".format(source_name), exc_info=True)
