@@ -209,7 +209,7 @@ def run_plugins(plugins, payload):
     for plugin in plugins:
         module, name = plugin.rsplit('.', 1)
         try:
-            getattr(importlib.import(module), name)(payload)
+            getattr(importlib.import_module(module), name)(payload)
         except Exception as e:
             print "Error in {}: {}".format(plugin, e)
 
