@@ -41,7 +41,7 @@ def run():
                    help='Default directory to house compiled files.')
     p.add_argument('-v', '--verbose', action='store_true', default=False,
                    help='Verbose output')
-    p.add_argument('-p', '--plugins', default=None,
+    p.add_argument('-j', '--plugins', default=None,
                    help="Template Plugins")
     args = p.parse_args()
 
