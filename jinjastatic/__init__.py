@@ -19,6 +19,8 @@ from dependencies import Dependencies
 
 logger = logging.getLogger('jinjastatic')
 
+global_config = [None]
+
 def run():
     configure_logging()
 
@@ -71,6 +73,8 @@ def run():
         config['plugins'] = args.split()
 
     config.setdefault("plugins", [])
+
+    global_config[0] = config
 
     env, loader = get_jinja_env(config, args.source)
     dependencies = Dependencies(args.source, env, loader)
@@ -187,7 +191,7 @@ def compile_file(env, source_name, source_file, dest_file, incremental):
         }
     try:
         template = env.get_template(source_name)
-        run_plugins(template)
+        run_plugins(global_config[0].plugins, template)
         result = template.render(ctx).encode('utf8')
     except Exception as e:
         logger.error("Error compiling {0}".format(source_name), exc_info=True)
@@ -201,7 +205,7 @@ def get_jinja_env(config, source):
     jinja_tag = jinjatag.JinjaTag()
     loader = jinja2.FileSystemLoader(source)
     env = jinja2.Environment(loader=loader, extensions=[jinja_tag])
-    run_plugins(payload)
+    run_plugins(config['plugins'], env)
     jinja_tag.init()
     return env, loader
 
