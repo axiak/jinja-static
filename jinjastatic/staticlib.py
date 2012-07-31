@@ -8,6 +8,7 @@ import random
 import tempfile
 import traceback
 import hashlib
+import urlparse
 import logging
 import collections
 try:
@@ -85,6 +86,7 @@ def _handle_tag(type_, ctx, src, debug=False, head=False, **kwargs):
     if min_dict.get(compiled_key):
         return ''
     elif ctxname in g.get(compiled_key, {}) and g['compiled']:
+        src = urlparse.urljoin(g['config'].get('static_root', ''), src)
         files = OrderedDict([(g['compiled'][orig], 1)
                              for orig in g[compiled_key][ctxname]]).keys()
         min_dict[compiled_key] = True
